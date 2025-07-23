@@ -12,6 +12,7 @@ from src.core.models import Agent, AgentRole, EditType, MessageType
 from src.core.streaming_engine import TokenStreamingEngine
 from src.core.chat_system import CollaborativeChatSystem
 from src.core.codebase_awareness import CodebaseAwarenessSystem
+from src.core.ai_integration import get_ai_manager
 
 logger = logging.getLogger(__name__)
 
@@ -337,39 +338,67 @@ class LlamaAgent:
             self.agent.status = "idle"
             return
         
-        # Parse user intent and respond accordingly
-        if "create" in content and "file" in content:
-            # Extract filename if mentioned
+        # Parse user intent more intelligently
+        if "create" in content and ("python" in content or "file" in content):
+            # Extract filename if mentioned, or create appropriate one
             words = message.content.split()
             filename = None
+            
+            # Look for specific filename
             for word in words:
-                if "." in word and not word.startswith("http"):
+                if word.endswith('.py') or word.endswith('.html') or word.endswith('.js') or word.endswith('.css'):
                     filename = word.strip(".,!?")
                     break
             
+            # If no specific filename, create based on context
             if not filename:
-                filename = "new_file.py" if self.agent.role == AgentRole.GENERAL else "index.html" if self.agent.role == AgentRole.UI else "test.py"
+                if "main" in content:
+                    filename = "main.py"
+                elif "hello" in content or "world" in content:
+                    filename = "hello_world.py"
+                elif self.agent.role == AgentRole.UI:
+                    filename = "index.html"
+                else:
+                    filename = "new_file.py"
             
-            # Check if the file already exists or is being created
+            # Check if the file actually exists
             existing_files = await self._get_existing_files()
             if filename in existing_files:
-                response = f"I see {filename} already exists. Would you like me to edit it instead?"
+                response = f"I see {filename} already exists. Would you like me to edit it or create a different file?"
             else:
-                response = f"I'll create {filename} for you!"
+                # Create appropriate content based on request
+                if "hello" in content and "world" in content:
+                    file_content = self._get_hello_world_content(filename)
+                    response = f"I'll create {filename} with a Hello World program!"
+                else:
+                    file_content = self._get_starter_content(filename)
+                    response = f"I'll create {filename} for you!"
+                
                 action = {
                     "type": "create_file",
                     "file_path": filename,
-                    "content": self._get_starter_content(filename)
+                    "content": file_content
                 }
         
+        elif "hello" in content and "world" in content:
+            # User wants hello world specifically
+            filename = "hello_world.py" if "main.py" not in content else "main.py"
+            response = f"I'll create {filename} with a Hello World program!"
+            action = {
+                "type": "create_file",
+                "file_path": filename,
+                "content": self._get_hello_world_content(filename)
+            }
+        
         elif "help" in content:
-            response = f"I'm {self.agent.name}, a {self.agent.role} agent. I can help with coding tasks. What would you like me to work on?"
+            response = f"I'm {self.agent.name}, a {self.agent.role} agent. I can create files, write code, and help with development tasks. Try asking me to 'create main.py with hello world' or 'create a Python file'."
         
         elif any(word in content for word in ["write", "code", "implement"]):
-            response = f"I'd be happy to help with coding! Please specify what you'd like me to create or which file to work on."
+            response = f"I'd be happy to help with coding! Please specify what you'd like me to create. For example: 'create main.py with hello world' or 'create a Python calculator'."
         
         else:
-            response = f"I understand you want me to work on something. Could you be more specific about what you'd like me to do?"
+            # More helpful generic response
+            response = f"I can help you with coding tasks! Try asking me to:\n• 'create main.py with hello world'\n• 'create a Python file'\n• 'help me with [specific task]'"
         
         # Send response
         if response:
@@ -407,6 +436,19 @@ class LlamaAgent:
             message_type=MessageType.CHAT
         )
     
+    def _get_hello_world_content(self, filename: str) -> str:
+        """Generate Hello World content based on file type"""
+        ext = filename.split('.')[-1].lower() if '.' in filename else 'py'
+        
+        if ext == 'py':
+            return f'# {filename}\n# Hello World program created by {self.agent.name}\n\ndef main():\n    """Simple Hello World function"""\n    print("Hello, World!")\n    print("Welcome to collaborative coding!")\n\nif __name__ == "__main__":\n    main()\n'
+        elif ext in ['html', 'htm']:
+            return f'<!DOCTYPE html>\n<html>\n<head>\n    <title>Hello World</title>\n    <meta charset="utf-8">\n</head>\n<body>\n    <h1>Hello, World!</h1>\n    <p>Created by {self.agent.name}</p>\n    <p>Welcome to collaborative coding!</p>\n</body>\n</html>\n'
+        elif ext == 'js':
+            return f'// {filename} - Hello World in JavaScript\n// Created by {self.agent.name}\n\nconsole.log("Hello, World!");\nconsole.log("Welcome to collaborative coding!");\n\n// Simple greeting function\nfunction greet(name = "World") {{\n    return `Hello, ${{name}}!`;\n}}\n\nconsole.log(greet());\n'
+        else:
+            return f'# {filename}\n# Hello World program\n# Created by {self.agent.name}\n\nprint("Hello, World!")\nprint("Welcome to collaborative coding!")\n'
+    
     def _get_starter_content(self, filename: str) -> str:
         """Generate appropriate starter content based on file type and agent role"""
         ext = filename.split('.')[-1].lower() if '.' in filename else 'txt'
@@ -434,9 +476,28 @@ class LlamaAgent:
     
     async def _generate_response_to_message(self, message) -> str:
         """Generate a contextual response to a chat message"""
-        # In a real implementation, this would use the LLM
-        # For now, providing rule-based responses based on agent role
-        
+        try:
+            # Use AI integration for better responses
+            ai_manager = get_ai_manager()
+            
+            context = {
+                'agent_role': str(self.agent.role),
+                'current_files': await self._get_existing_files(),
+                'recent_messages': [msg.content for msg in self.conversation_context[-3:]]
+            }
+            
+            prompt = f"A user mentioned me in a collaborative coding chat: '{message.content}'. How should I respond as a {self.agent.role} agent?"
+            
+            response = await ai_manager.generate_response(prompt, context)
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error generating AI response: {e}")
+            # Fallback to rule-based responses
+            return self._generate_fallback_response(message)
+    
+    def _generate_fallback_response(self, message) -> str:
+        """Fallback rule-based response generation"""
         content = message.content.lower()
         
         if self.agent.role == AgentRole.SECURITY:
@@ -489,14 +550,14 @@ class LlamaAgent:
                     "content": "# Main application file\n\ndef main():\n    print('Hello, collaborative coding!')\n\nif __name__ == '__main__':\n    main()\n"
                 }
         
-        # Almost never add random functionality
-        if random.random() < 0.01:  # Reduced from 0.1 to 0.01
-            return {
-                "type": "edit_file",
-                "file_path": "main.py",
-                "content": "\n# Adding new functionality\n",
-                "position": -1  # Append to end
-            }
+        # Disabled random functionality additions to prevent spam
+        # if random.random() < 0.01:  # Reduced from 0.1 to 0.01
+        #     return {
+        #         "type": "edit_file",
+        #         "file_path": "main.py",
+        #         "content": "\n# Adding new functionality\n",
+        #         "position": -1  # Append to end
+        #     }
         
         return None
     
@@ -660,8 +721,18 @@ class LlamaAgent:
     
     async def _get_existing_files(self) -> List[str]:
         """Get list of existing files in the workspace"""
-        project_overview = await self.codebase_system.get_project_overview()
-        return list(self.codebase_system.file_index.keys())
+        try:
+            # Check actual filesystem
+            import os
+            workspace_path = "./workspace"
+            if os.path.exists(workspace_path):
+                return [f for f in os.listdir(workspace_path) 
+                       if os.path.isfile(os.path.join(workspace_path, f))]
+            return []
+        except Exception as e:
+            logger.error(f"Error checking existing files: {e}")
+            # Fallback to codebase system
+            return list(self.codebase_system.file_index.keys())
     
     async def _process_edit_queue(self):
         """Process queued edits"""
