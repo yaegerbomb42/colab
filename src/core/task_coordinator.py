@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 
 from src.core.models import AgentRole, MessageType
-from src.agents.llama_agent import LlamaAgent
+from src.agents.fast_agent import FastAgent
 from src.core.streaming_engine import TokenStreamingEngine
 from src.core.chat_system import CollaborativeChatSystem
 from src.core.codebase_awareness import CodebaseAwarenessSystem
@@ -49,7 +49,7 @@ class TaskCoordinator:
         self.chat_system = chat_system
         self.codebase_system = codebase_system
         
-        self.agents: Dict[str, LlamaAgent] = {}
+        self.agents: Dict[str, FastAgent] = {}
         self.tasks: Dict[str, Task] = {}
         self.task_queue = asyncio.Queue()
         
@@ -258,7 +258,7 @@ class TaskCoordinator:
         role = await self._determine_best_role()
         
         # Create agent
-        agent = LlamaAgent(
+        agent = FastAgent(
             agent_id=agent_id,
             name=f"Agent {self.next_agent_id}",
             role=role,
@@ -333,7 +333,7 @@ class TaskCoordinator:
                 logger.error(f"Error processing task queue: {e}")
                 await asyncio.sleep(1)
     
-    async def _find_best_agent(self, task: Task) -> Optional[LlamaAgent]:
+    async def _find_best_agent(self, task: Task) -> Optional[FastAgent]:
         """Find the best agent for a specific task"""
         available_agents = [
             agent for agent in self.agents.values()
@@ -362,25 +362,23 @@ class TaskCoordinator:
         scored_agents.sort(key=lambda x: x[0], reverse=True)
         return scored_agents[0][1]
     
-    async def _send_task_to_agent(self, agent: LlamaAgent, task: Task):
+    async def _send_task_to_agent(self, agent: FastAgent, task: Task):
         """Send a task to a specific agent"""
         try:
             # Update task status
             task.status = "in_progress"
             agent.current_task = task
             
-            # Create task message for agent
-            task_prompt = f"Task: {task.description}"
-            if task.file_path:
-                task_prompt += f" (File: {task.file_path})"
-            
-            # Send to agent's chat queue
-            await agent.chat_queue.put({
+            # Create task data for agent
+            task_data = {
                 "type": "task_assignment",
-                "content": task_prompt,
+                "content": task.description,
                 "task_id": task.id,
                 "file_path": task.file_path
-            })
+            }
+            
+            # Send directly to agent's task handler
+            await agent.handle_task(task_data)
             
             # Notify via chat
             await self.chat_system.send_message(

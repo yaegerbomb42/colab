@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASCII Banana</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            min-height: 100vh;
+        }}
+        .container {{
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+        }}
+        .ascii-banana {{
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.2;
+            white-space: pre;
+            background: #f9f9f9;
+            padding: 30px;
+            border-radius: 10px;
+            margin: 20px 0;
+            color: #8B4513;
+            border: 2px solid #FFD700;
+        }}
+        h1 {{
+            color: #8B4513;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }}
+        .emoji {{
+            font-size: 2em;
+            margin: 10px 0;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍌 ASCII Banana 🍌</h1>
+        <div class="emoji">🐒 Welcome to the Banana Zone! 🐒</div>
+        
+        <div class="ascii-banana">                    ,,,,
+                  ,;;;;;;,
+                ,;;;;;;;;;;;,
+              ,;;;;;;;;;;;;;;;;;,
+            ,;;;;;;;;;;;;;;;;;;;;;;;,
+          ,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+        ,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;,
+      ,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;,
+  ,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;,
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;,
+  ,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;,
+      ,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+        ,;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;,
+          ,;;;;;;;;;;;;;;;;;;;;;;;;;,
+            ,;;;;;;;;;;;;;;;;;;;,
+              ,;;;;;;;;;;;;;,
+                ,;;;;;;;,
+                  ,,,,
+                  
+            Perfect ASCII Banana!
+        </div>
+        
+        <div class="emoji">🍌 Perfectly Curved & Delicious! 🍌</div>
+        <p>This banana was carefully crafted with ASCII art to bring you the most realistic digital fruit experience!</p>
+    </div>
+    
+    <script>
+        // Add some interactive banana fun
+        document.querySelector('.ascii-banana').addEventListener('click', function() {{
+            this.style.transform = 'rotate(5deg)';
+            setTimeout(() => {{
+                this.style.transform = 'rotate(0deg)';
+            }}, 200);
+        }});
+    </script>
+</body>
+</html>

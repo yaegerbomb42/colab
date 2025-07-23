@@ -15,7 +15,7 @@ from src.core.streaming_engine import TokenStreamingEngine
 from src.core.chat_system import CollaborativeChatSystem
 from src.core.codebase_awareness import CodebaseAwarenessSystem
 from src.core.task_coordinator import get_task_coordinator
-from src.agents.llama_agent import LlamaAgent
+from src.agents.fast_agent import FastAgent
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ class CollaborativeAPI:
         self.ws_manager = WebSocketManager()
         
         # Agent management (now handled by task coordinator)
-        self.agents: Dict[str, LlamaAgent] = {}
+        self.agents: Dict[str, FastAgent] = {}
         self.agent_tasks: Dict[str, asyncio.Task] = {}
         
         # Setup event listeners
@@ -167,7 +167,7 @@ class CollaborativeAPI:
                 name = agent_data.get("name", f"Agent {len(self.agents) + 1}")
                 role = AgentRole(agent_data.get("role", "general"))
                 
-                agent = LlamaAgent(
+                agent = FastAgent(
                     agent_id=agent_id,
                     name=name,
                     role=role,

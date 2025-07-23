@@ -18,6 +18,9 @@ class MessageType(str, Enum):
     FILE_REFERENCE = "file_reference"
     TASK_UPDATE = "task_update"
     CODE_SUGGESTION = "code_suggestion"
+    AGENT_JOIN = "agent_join"
+    AGENT_LEAVE = "agent_leave"
+    AGENT_ACTION = "agent_action"
 
 class EditType(str, Enum):
     INSERT = "insert"
