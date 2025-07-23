@@ -12,6 +12,7 @@ from src.core.models import Agent, AgentRole, EditType, MessageType
 from src.core.streaming_engine import TokenStreamingEngine
 from src.core.chat_system import CollaborativeChatSystem
 from src.core.codebase_awareness import CodebaseAwarenessSystem
+from src.core.ai_integration_v2 import get_ai_manager
 from src.core.ai_integration import get_ai_manager
 
 logger = logging.getLogger(__name__)
@@ -65,29 +66,22 @@ class LlamaAgent:
     
     async def initialize(self):
         """Initialize the agent's AI model"""
-        logger.info(f"Initializing agent {self.agent.name} with model {self.model_name}")
+        logger.info(f"Initializing agent {self.agent.name} with AI integration")
         
         try:
-            # In a real implementation, this would load Llama 1B
-            # For now, using a smaller model for demonstration
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
+            # Initialize AI manager with preferred model
+            self.ai_manager = await get_ai_manager("auto")
             
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                device_map="auto" if torch.cuda.is_available() else None
+            # Test AI integration
+            test_response = await self.ai_manager.generate_response(
+                "Hello", "", self.agent.role.value
             )
             
-            logger.info(f"Agent {self.agent.name} initialized successfully")
+            logger.info(f"Agent {self.agent.name} initialized successfully with AI: {test_response[:50]}...")
             
         except Exception as e:
-            logger.warning(f"Failed to initialize model for agent {self.agent.name}: {e}")
-            logger.info(f"Agent {self.agent.name} will use mock responses for demonstration")
-            # Fallback to mock responses for demo
-            self.model = None
-            self.tokenizer = None
+            logger.warning(f"AI initialization issue for agent {self.agent.name}: {e}")
+            logger.info(f"Agent {self.agent.name} will use fallback responses")
     
     async def start(self):
         """Start the agent's autonomous behavior loop"""
@@ -448,6 +442,19 @@ class LlamaAgent:
             return f'// {filename} - Hello World in JavaScript\n// Created by {self.agent.name}\n\nconsole.log("Hello, World!");\nconsole.log("Welcome to collaborative coding!");\n\n// Simple greeting function\nfunction greet(name = "World") {{\n    return `Hello, ${{name}}!`;\n}}\n\nconsole.log(greet());\n'
         else:
             return f'# {filename}\n# Hello World program\n# Created by {self.agent.name}\n\nprint("Hello, World!")\nprint("Welcome to collaborative coding!")\n'
+    
+    def _get_hello_world_content(self, filename: str) -> str:
+        """Generate hello world content based on file type"""
+        ext = filename.split('.')[-1].lower() if '.' in filename else 'txt'
+        
+        if ext == 'py':
+            return f'# {filename}\n# Hello World program created by {self.agent.name}\n\ndef main():\n    print("Hello, World!")\n    print("Welcome to collaborative coding!")\n\nif __name__ == "__main__":\n    main()\n'
+        elif ext in ['html', 'htm']:
+            return f'<!DOCTYPE html>\n<html>\n<head>\n    <title>Hello World</title>\n    <meta charset="utf-8">\n</head>\n<body>\n    <h1>Hello, World!</h1>\n    <p>Created by {self.agent.name}</p>\n</body>\n</html>\n'
+        elif ext == 'js':
+            return f'// {filename} - Hello World program\n// Created by {self.agent.name}\n\nconsole.log("Hello, World!");\nconsole.log("Welcome to collaborative coding!");\n'
+        else:
+            return f'# {filename}\n# Hello World program\n# Created by {self.agent.name}\n\nprint("Hello, World!")\n'
     
     def _get_starter_content(self, filename: str) -> str:
         """Generate appropriate starter content based on file type and agent role"""
