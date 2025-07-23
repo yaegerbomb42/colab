@@ -13,7 +13,6 @@ from src.core.streaming_engine import TokenStreamingEngine
 from src.core.chat_system import CollaborativeChatSystem
 from src.core.codebase_awareness import CodebaseAwarenessSystem
 from src.core.ai_integration_v2 import get_ai_manager
-from src.core.ai_integration import get_ai_manager
 
 logger = logging.getLogger(__name__)
 
@@ -753,15 +752,308 @@ class LlamaAgent:
                 logger.error(f"Error processing edit queue: {e}")
     
     async def _process_chat_queue(self):
-        """Process queued chat responses"""
+        """Process queued chat responses and task assignments"""
         while self.is_active:
             try:
                 message = await asyncio.wait_for(self.chat_queue.get(), timeout=1.0)
-                await self._respond_to_mention(message)
+                
+                if isinstance(message, dict) and message.get("type") == "task_assignment":
+                    # Handle task assignment from coordinator
+                    await self._handle_task_assignment(message)
+                else:
+                    # Handle regular chat message
+                    await self._respond_to_mention(message)
+                    
             except asyncio.TimeoutError:
                 continue
             except Exception as e:
                 logger.error(f"Error processing chat queue: {e}")
+    
+    async def _handle_task_assignment(self, task_message: dict):
+        """Handle a task assignment from the task coordinator"""
+        try:
+            task_content = task_message.get("content", "")
+            task_id = task_message.get("task_id", "")
+            file_path = task_message.get("file_path")
+            
+            logger.info(f"Agent {self.agent.name} received task: {task_content}")
+            
+            # Acknowledge task receipt
+            await self.chat_system.send_message(
+                agent_id=self.agent.id,
+                content=f"📋 I'll work on: {task_content}",
+                message_type=MessageType.TASK_UPDATE
+            )
+            
+            # Process the task based on content
+            if "create" in task_content.lower() and file_path:
+                await self._create_file_task(file_path, task_content)
+            elif "edit" in task_content.lower() and file_path:
+                await self._edit_file_task(file_path, task_content)
+            else:
+                # Generic task response
+                await self._respond_to_user_request(task_content)
+            
+            # Mark task as completed
+            await self.chat_system.send_message(
+                agent_id=self.agent.id,
+                content=f"✅ Completed: {task_content}",
+                message_type=MessageType.TASK_UPDATE
+            )
+            
+            # Clear current task
+            self.current_task = None
+            
+        except Exception as e:
+            logger.error(f"Error handling task assignment: {e}")
+            await self.chat_system.send_message(
+                agent_id=self.agent.id,
+                content=f"❌ Error with task: {str(e)}",
+                message_type=MessageType.TASK_UPDATE
+            )
+    
+    async def _create_file_task(self, file_path: str, task_description: str):
+        """Create a file based on task description"""
+        try:
+            await self.chat_system.send_message(
+                agent_id=self.agent.id,
+                content=f"Starting to create {file_path}",
+                message_type=MessageType.AGENT_ACTION
+            )
+            
+            # Generate content based on file type and description
+            if file_path.endswith('.py'):
+                content = await self._generate_python_content(task_description)
+            elif file_path.endswith('.html'):
+                content = await self._generate_html_content(task_description)
+            elif file_path.endswith('.js'):
+                content = await self._generate_js_content(task_description)
+            elif file_path.endswith('.css'):
+                content = await self._generate_css_content(task_description)
+            else:
+                content = f"# {file_path}\n# Created based on: {task_description}\n\n# TODO: Implement content"
+            
+            # Stream the content creation
+            await self._stream_file_creation(file_path, content)
+            
+            await self.chat_system.send_message(
+                agent_id=self.agent.id,
+                content=f"Finished creating {file_path}",
+                message_type=MessageType.AGENT_ACTION
+            )
+            
+        except Exception as e:
+            logger.error(f"Error creating file {file_path}: {e}")
+            raise
+    
+    async def _generate_python_content(self, description: str) -> str:
+        """Generate Python content based on description"""
+        try:
+            if self.ai_manager:
+                prompt = f"Create Python code for: {description}. Include proper structure, comments, and a main function if appropriate."
+                response = await self.ai_manager.generate_response(prompt, "", "general")
+                
+                # Extract code from response if it's wrapped
+                if "```python" in response:
+                    lines = response.split('\n')
+                    code_lines = []
+                    in_code = False
+                    for line in lines:
+                        if line.strip().startswith("```python"):
+                            in_code = True
+                            continue
+                        elif line.strip() == "```" and in_code:
+                            break
+                        elif in_code:
+                            code_lines.append(line)
+                    if code_lines:
+                        return '\n'.join(code_lines)
+                
+                return response
+        except Exception as e:
+            logger.error(f"Error generating Python content: {e}")
+        
+        # Fallback content
+        if "hello world" in description.lower():
+            return '''#!/usr/bin/env python3
+"""
+Hello World Python Script
+"""
+
+def main():
+    print("Hello, World!")
+    print("Welcome to the Multi-Agent Development Environment!")
+
+if __name__ == "__main__":
+    main()
+'''
+        else:
+            return f'''#!/usr/bin/env python3
+"""
+{description}
+"""
+
+def main():
+    # TODO: Implement {description}
+    print("Starting {description}")
+
+if __name__ == "__main__":
+    main()
+'''
+    
+    async def _generate_html_content(self, description: str) -> str:
+        """Generate HTML content based on description"""
+        try:
+            if self.ai_manager:
+                prompt = f"Create HTML content for: {description}. Include proper structure, meta tags, and styling."
+                response = await self.ai_manager.generate_response(prompt, "", "ui")
+                return response
+        except Exception as e:
+            logger.error(f"Error generating HTML content: {e}")
+        
+        # Extract theme from description
+        theme = "webpage"
+        if "banana" in description.lower():
+            theme = "banana"
+        elif "monkey" in description.lower():
+            theme = "monkey"
+        
+        return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{theme.title()} Page</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            min-height: 100vh;
+        }}
+        .container {{
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }}
+        h1 {{
+            color: #8B4513;
+            text-align: center;
+            font-size: 2.5em;
+        }}
+        .emoji {{
+            font-size: 3em;
+            text-align: center;
+            margin: 20px 0;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍌 {theme.title()} Page 🐒</h1>
+        <div class="emoji">🍌🐒🍌</div>
+        <p>Welcome to the amazing {theme} webpage!</p>
+        <p>{description}</p>
+        <div class="emoji">🌴🍌🐵🍌🌴</div>
+    </div>
+</body>
+</html>'''
+
+    async def _generate_js_content(self, description: str) -> str:
+        """Generate JavaScript content based on description"""
+        return f'''// {description}
+// Generated by Multi-Agent Development Environment
+
+console.log("JavaScript file created: {description}");
+
+// TODO: Implement {description}
+function main() {{
+    console.log("Starting {description}");
+}}
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', main);
+'''
+
+    async def _generate_css_content(self, description: str) -> str:
+        """Generate CSS content based on description"""
+        return f'''/* {description} */
+/* Generated by Multi-Agent Development Environment */
+
+body {{
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    line-height: 1.6;
+}}
+
+.container {{
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}}
+
+/* TODO: Add styles for {description} */
+'''
+
+    async def _stream_file_creation(self, file_path: str, content: str):
+        """Stream file creation with realistic typing effect"""
+        try:
+            # Clear the file first
+            await self.streaming_engine.clear_file(file_path)
+            
+            # Stream content character by character
+            for i, char in enumerate(content):
+                await self.streaming_engine.stream_token(
+                    agent_id=self.agent.id,
+                    file_path=file_path,
+                    position=i,
+                    token=char,
+                    edit_type=EditType.INSERT
+                )
+                
+                # Add small delay for realistic typing
+                await asyncio.sleep(self.typing_speed)
+                
+        except Exception as e:
+            logger.error(f"Error streaming file creation: {e}")
+            # Fallback: create file all at once
+            await self.streaming_engine.stream_token(
+                agent_id=self.agent.id,
+                file_path=file_path,
+                position=0,
+                token=content,
+                edit_type=EditType.INSERT
+            )
+
+    async def _edit_file_task(self, file_path: str, task_description: str):
+        """Edit an existing file based on task description"""
+        try:
+            current_content = await self.streaming_engine.get_file_content(file_path)
+            
+            await self.chat_system.send_message(
+                agent_id=self.agent.id,
+                content=f"Editing {file_path}",
+                message_type=MessageType.AGENT_ACTION
+            )
+            
+            # Generate edit based on current content and task
+            if self.ai_manager:
+                prompt = f"Edit this code to: {task_description}\n\nCurrent code:\n{current_content}"
+                new_content = await self.ai_manager.generate_response(prompt, "", self.agent.role.value)
+            else:
+                new_content = current_content + f"\n# Edit: {task_description}\n"
+            
+            # Stream the edit
+            await self._stream_file_creation(file_path, new_content)
+            
+        except Exception as e:
+            logger.error(f"Error editing file {file_path}: {e}")
+            raise
     
     async def _periodic_collaboration_check(self):
         """Periodically check for collaboration opportunities"""

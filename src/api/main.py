@@ -14,6 +14,7 @@ from src.core.models import Agent, AgentRole, EditType, MessageType, FileEdit, C
 from src.core.streaming_engine import TokenStreamingEngine
 from src.core.chat_system import CollaborativeChatSystem
 from src.core.codebase_awareness import CodebaseAwarenessSystem
+from src.core.task_coordinator import get_task_coordinator
 from src.agents.llama_agent import LlamaAgent
 
 logger = logging.getLogger(__name__)
@@ -102,10 +103,13 @@ class CollaborativeAPI:
         self.chat_system = CollaborativeChatSystem()
         self.codebase_system = CodebaseAwarenessSystem()
         
+        # Task coordination system
+        self.task_coordinator = None
+        
         # WebSocket management
         self.ws_manager = WebSocketManager()
         
-        # Agent management
+        # Agent management (now handled by task coordinator)
         self.agents: Dict[str, LlamaAgent] = {}
         self.agent_tasks: Dict[str, asyncio.Task] = {}
         
@@ -196,6 +200,45 @@ class CollaborativeAPI:
                 return {"status": "success"}
             else:
                 raise HTTPException(status_code=404, detail="Agent not found")
+        
+        @self.app.post("/api/process-request")
+        async def process_user_request(request_data: dict):
+            """Process a user request using the task coordinator"""
+            try:
+                if not self.task_coordinator:
+                    raise HTTPException(status_code=500, detail="Task coordinator not initialized")
+                
+                user_input = request_data.get("message", "")
+                if not user_input:
+                    raise HTTPException(status_code=400, detail="Message is required")
+                
+                # Process the request
+                result = await self.task_coordinator.process_user_request(user_input)
+                
+                # Get system status
+                status = await self.task_coordinator.get_system_status()
+                
+                return {
+                    "status": "success",
+                    "result": result,
+                    "system_status": status
+                }
+                
+            except Exception as e:
+                logger.error(f"Error processing user request: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get("/api/system-status")
+        async def get_system_status():
+            """Get the current system status"""
+            try:
+                if not self.task_coordinator:
+                    return {"status": "Task coordinator not initialized"}
+                
+                return await self.task_coordinator.get_system_status()
+                
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
         
         @self.app.get("/api/agents")
         async def list_agents():
@@ -328,6 +371,18 @@ class CollaborativeAPI:
                     file_reference=message.get("file_reference"),
                     line_reference=message.get("line_reference")
                 )
+                
+                # Process through task coordinator if available
+                if self.task_coordinator and message.get("content"):
+                    try:
+                        result = await self.task_coordinator.process_user_request(message["content"])
+                        await self.ws_manager.send_to_connection(connection_id, {
+                            "type": "task_processed",
+                            "result": result,
+                            "original_message_id": chat_message.id
+                        })
+                    except Exception as e:
+                        logger.error(f"Error processing task: {e}")
                 
                 await self.ws_manager.send_to_connection(connection_id, {
                     "type": "message_sent",
@@ -562,33 +617,34 @@ class CollaborativeAPI:
         </div>
         
         <div class="chat-panel">
-            <div class="chat-header">Agent Collaboration</div>
+            <div class="chat-header">🤖 Multi-Agent Development Environment</div>
             
             <div class="agents-list" id="agents-list">
-                <div class="agent">No agents connected</div>
+                <div class="agent">Starting agents...</div>
             </div>
             
             <div class="chat-messages" id="chat-messages">
                 <div class="message system">
-                    <div class="message-header">System</div>
+                    <div class="message-header">🚀 System</div>
                     <div>Welcome to the Multi-Agent Live Development Environment!</div>
                 </div>
                 <div class="message system">
-                    <div class="message-header">System</div>
-                    <div>💡 Try saying: "create a Python file", "help me with HTML", "write a function", etc.</div>
+                    <div class="message-header">💡 How to use</div>
+                    <div>Just type what you want! Examples:</div>
+                    <div>• "create a Python hello world file"</div>
+                    <div>• "create a banana webpage for monkeys"</div>
+                    <div>• "help me build a calculator app"</div>
+                    <div>• "debug my code"</div>
                 </div>
                 <div class="message system">
-                    <div class="message-header">System</div>
-                    <div>🤖 Agents will introduce themselves and respond to your requests!</div>
+                    <div class="message-header">🤖 Intelligent Agents</div>
+                    <div>Agents will automatically join based on your needs!</div>
                 </div>
             </div>
             
             <div class="chat-input">
-                <input type="text" id="chat-input" placeholder="Ask agents to help: 'create a Python file', 'help me with UI', etc.">
-                <button onclick="sendMessage()" title="Send message to agents">Send</button>
-                <button onclick="createAgent('general')" title="Create a General Development Agent">👨‍💻 General</button>
-                <button onclick="createAgent('ui')" title="Create a UI/Frontend Agent">🎨 UI</button>
-                <button onclick="createAgent('linter')" title="Create a Code Quality Agent">🔍 Linter</button>
+                <input type="text" id="chat-input" placeholder="Type your request: 'create a Python file', 'build a webpage', etc." style="flex: 1;">
+                <button onclick="sendMessage()" title="Send request to agents">� Send</button>
             </div>
         </div>
     </div>
@@ -770,48 +826,44 @@ class CollaborativeAPI:
             document.getElementById('status').textContent = status;
         }
         
-        function createAgent(role = 'general') {
-            fetch('/api/agents/create', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    role: role,
-                    name: `${role.charAt(0).toUpperCase() + role.slice(1)} Agent`
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('Agent created:', data);
-                loadAgents();
-            })
-            .catch(error => {
-                console.error('Error creating agent:', error);
-            });
-        }
-        
-        function loadAgents() {
-            fetch('/api/agents')
+        function loadSystemStatus() {
+            fetch('/api/system-status')
                 .then(response => response.json())
-                .then(agents => {
+                .then(status => {
                     const agentsList = document.getElementById('agents-list');
                     agentsList.innerHTML = '';
                     
-                    if (Object.keys(agents).length === 0) {
-                        agentsList.innerHTML = '<div class="agent">No agents connected</div>';
+                    if (status.agents && status.agents.agents) {
+                        const agents = status.agents.agents;
+                        if (agents.length === 0) {
+                            agentsList.innerHTML = '<div class="agent">🤖 Agents will join as needed</div>';
+                        } else {
+                            agents.forEach(agent => {
+                                const agentDiv = document.createElement('div');
+                                agentDiv.className = `agent ${agent.status === 'active' ? 'active' : ''}`;
+                                agentDiv.innerHTML = `
+                                    🤖 ${agent.name} (${agent.role})
+                                    ${agent.current_task ? ` • Working: ${agent.current_task}` : ' • Ready'}
+                                `;
+                                agentsList.appendChild(agentDiv);
+                            });
+                        }
+                        
+                        // Show task status
+                        if (status.tasks) {
+                            const taskDiv = document.createElement('div');
+                            taskDiv.className = 'agent';
+                            taskDiv.innerHTML = `📋 Tasks: ${status.tasks.in_progress} active, ${status.tasks.pending} pending`;
+                            agentsList.appendChild(taskDiv);
+                        }
                     } else {
-                        Object.values(agents).forEach(agent => {
-                            const agentDiv = document.createElement('div');
-                            agentDiv.className = `agent ${agent.is_active ? 'active' : ''}`;
-                            agentDiv.innerHTML = `
-                                ${agent.name} (${agent.role}) - ${agent.status}
-                                ${agent.current_file ? ` • ${agent.current_file}` : ''}
-                            `;
-                            agentsList.appendChild(agentDiv);
-                        });
+                        agentsList.innerHTML = '<div class="agent">🚀 System starting...</div>';
                     }
                 })
                 .catch(error => {
-                    console.error('Error loading agents:', error);
+                    console.error('Error loading system status:', error);
+                    const agentsList = document.getElementById('agents-list');
+                    agentsList.innerHTML = '<div class="agent">⚠️ System status unavailable</div>';
                 });
         }
         
@@ -825,15 +877,11 @@ class CollaborativeAPI:
         // Initialize
         connect();
         
-        // Load agents periodically
-        setInterval(loadAgents, 5000);
+        // Load system status periodically
+        setInterval(loadSystemStatus, 3000);
         
-        // Create initial agents after a short delay
-        setTimeout(() => {
-            createAgent('general');
-            setTimeout(() => createAgent('ui'), 2000);
-            setTimeout(() => createAgent('linter'), 4000);
-        }, 3000);
+        // Initial status load
+        setTimeout(loadSystemStatus, 1000);
     </script>
 </body>
 </html>
@@ -846,6 +894,13 @@ class CollaborativeAPI:
         # Create workspace directory if it doesn't exist
         workspace_path = "./workspace"
         os.makedirs(workspace_path, exist_ok=True)
+        
+        # Initialize task coordinator
+        self.task_coordinator = await get_task_coordinator(
+            self.streaming_engine,
+            self.chat_system,
+            self.codebase_system
+        )
         
         # Index the workspace
         await self.codebase_system.index_workspace()
