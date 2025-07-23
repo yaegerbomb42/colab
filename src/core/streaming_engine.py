@@ -167,6 +167,17 @@ class TokenStreamingEngine:
             await self._load_file_state(file_path)
         return self.file_states[file_path].content
     
+    async def clear_file(self, file_path: str):
+        """Clear a file's content"""
+        if file_path not in self.file_states:
+            await self._load_file_state(file_path)
+        
+        # Clear the file content
+        self.file_states[file_path].content = ""
+        
+        # Save empty file to disk
+        await self._save_file_to_disk(file_path, "")
+    
     async def add_watcher(self, agent_id: str, file_path: str):
         """Add an agent as a watcher of a file"""
         if file_path not in self.file_states:

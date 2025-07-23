@@ -409,8 +409,11 @@ document.addEventListener('DOMContentLoaded', main);
     async def _fast_stream_content(self, file_path: str, content: str):
         """Stream content creation with optimized speed"""
         try:
-            # Clear file first
-            await self.streaming_engine.clear_file(file_path)
+            # Try to clear file first (if it exists)
+            try:
+                await self.streaming_engine.clear_file(file_path)
+            except Exception as e:
+                logger.debug(f"File {file_path} might not exist yet: {e}")
             
             # For fast demo, stream in chunks instead of character by character
             chunk_size = 50  # Stream 50 characters at a time
@@ -431,14 +434,19 @@ document.addEventListener('DOMContentLoaded', main);
                 
         except Exception as e:
             logger.error(f"Error streaming content: {e}")
-            # Fallback: create file all at once
-            await self.streaming_engine.stream_token(
-                agent_id=self.agent.id,
-                file_path=file_path,
-                position=0,
-                token=content,
-                edit_type=EditType.INSERT
-            )
+            # Fallback: create file using simple file write
+            try:
+                full_path = os.path.join("./workspace", file_path.lstrip('/'))
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                
+                with open(full_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                logger.info(f"Successfully created {file_path} using fallback method")
+                
+            except Exception as fallback_error:
+                logger.error(f"Fallback file creation also failed: {fallback_error}")
+                raise
     
     async def _handle_file_editing(self, file_path: str, description: str):
         """Handle file editing tasks"""

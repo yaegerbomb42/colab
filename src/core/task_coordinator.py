@@ -380,18 +380,23 @@ class TaskCoordinator:
             # Send directly to agent's task handler
             await agent.handle_task(task_data)
             
+            # Mark task as completed
+            task.status = "completed"
+            agent.current_task = None
+            
             # Notify via chat
             await self.chat_system.send_message(
                 agent_id="system",
-                content=f"📋 Task assigned to {agent.agent.name}: {task.description}",
+                content=f"📋 Task completed by {agent.agent.name}: {task.description}",
                 message_type=MessageType.TASK_UPDATE
             )
             
-            logger.info(f"Assigned task {task.id} to agent {agent.agent.id}")
+            logger.info(f"Completed task {task.id} with agent {agent.agent.id}")
             
         except Exception as e:
             logger.error(f"Error sending task to agent: {e}")
             task.status = "failed"
+            agent.current_task = None
     
     async def get_system_status(self) -> Dict[str, Any]:
         """Get current system status"""
